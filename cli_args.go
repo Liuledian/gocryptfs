@@ -26,6 +26,8 @@ import (
 
 // argContainer stores the parsed CLI options and arguments
 type argContainer struct {
+	blocksize, parallel uint64
+
 	debug, init, zerokey, fusedebug, openssl, passwd, fg, version,
 	plaintextnames, quiet, nosyslog, wpanic,
 	longnames, allow_other, reverse, aessiv, nonempty, raw64,
@@ -151,6 +153,10 @@ func parseCliOpts(osArgs []string) (args argContainer) {
 
 	flagSet = flag.NewFlagSet(tlog.ProgramName, flag.ContinueOnError)
 	flagSet.Usage = func() {}
+	// parameterize some option for test----------
+	flagSet.Uint64Var(&args.blocksize, "blocksize", 0, "change block size")
+	flagSet.Uint64Var(&args.parallel, "parallel", 0, "change parallel")
+	//--------------------------------------------
 	flagSet.BoolVar(&args.debug, "d", false, "")
 	flagSet.BoolVar(&args.debug, "debug", false, "Enable debug output")
 	flagSet.BoolVar(&args.fusedebug, "fusedebug", false, "Enable fuse library debug output")

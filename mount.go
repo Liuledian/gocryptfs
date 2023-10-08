@@ -326,7 +326,9 @@ func initFuseFrontend(args *argContainer) (rootNode fs.InodeEmbedder, wipeKeys f
 
 	// Init crypto backend
 	cCore := cryptocore.New(masterkey, cryptoBackend, IVBits, args.hkdf)
-	cEnc := contentenc.New(cCore, contentenc.DefaultBS)
+	// liuledian for test
+	cEnc := contentenc.New(cCore, args.blocksize)
+	contentenc.ParallelForTest = args.parallel
 	nameTransform := nametransform.New(cCore.EMECipher, frontendArgs.LongNames, args.longnamemax,
 		args.raw64, []string(args.badname), frontendArgs.DeterministicNames)
 	// After the crypto backend is initialized,

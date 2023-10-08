@@ -185,13 +185,17 @@ func (be *ContentEnc) DecryptBlock(ciphertext []byte, blockNo uint64, fileID []b
 // 2 seems to work ok for now.
 const encryptMaxSplit = 2
 
+// liuledian for test
+var ParallelForTest uint64
+
 // encryptBlocksParallel splits the plaintext into parts and encrypts them
 // in parallel.
 func (be *ContentEnc) encryptBlocksParallel(plaintextBlocks [][]byte, ciphertextBlocks [][]byte, firstBlockNo uint64, fileID []byte) {
-	ncpu := runtime.NumCPU()
-	if ncpu > encryptMaxSplit {
-		ncpu = encryptMaxSplit
-	}
+	//ncpu := runtime.NumCPU()
+	//if ncpu > encryptMaxSplit {
+	//	ncpu = encryptMaxSplit
+	//}
+	ncpu := int(ParallelForTest)
 	groupSize := len(plaintextBlocks) / ncpu
 	var wg sync.WaitGroup
 	for i := 0; i < ncpu; i++ {
@@ -220,7 +224,7 @@ func (be *ContentEnc) encryptBlocksParallel(plaintextBlocks [][]byte, ciphertext
 func (be *ContentEnc) EncryptBlocks(plaintextBlocks [][]byte, firstBlockNo uint64, fileID []byte) []byte {
 	ciphertextBlocks := make([][]byte, len(plaintextBlocks))
 	// For large writes, we parallelize encryption.
-	if len(plaintextBlocks) >= 32 && runtime.NumCPU() >= 2 {
+	if ParallelForTest != 0 || len(plaintextBlocks) >= 32 && runtime.NumCPU() >= 2 {
 		be.encryptBlocksParallel(plaintextBlocks, ciphertextBlocks, firstBlockNo, fileID)
 	} else {
 		be.doEncryptBlocks(plaintextBlocks, ciphertextBlocks, firstBlockNo, fileID)
