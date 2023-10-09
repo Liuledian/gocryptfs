@@ -3,13 +3,11 @@ package fusefrontend
 // FUSE operations on file handles
 
 import (
-	"bytes"
 	"context"
 	"encoding/hex"
 	"fmt"
 	"io"
 	"log"
-	"math"
 	"os"
 	"sync"
 	"syscall"
@@ -174,45 +172,47 @@ func (f *File) doRead(dst []byte, off uint64, length uint64) ([]byte, syscall.Er
 	if fileID == nil {
 		log.Panicf("fileID=%v", fileID)
 	}
-	// Read the backing ciphertext in one go
-	blocks := f.contentEnc.ExplodePlainRange(off, length)
-	alignedOffset, alignedLength := blocks[0].JointCiphertextRange(blocks)
-	// f.fd.ReadAt takes an int64!
-	if alignedOffset > math.MaxInt64 {
-		return nil, syscall.EFBIG
-	}
-	skip := blocks[0].Skip
-	tlog.Debug.Printf("doRead: off=%d len=%d -> off=%d len=%d skip=%d\n",
-		off, length, alignedOffset, alignedLength, skip)
-
-	ciphertext := f.rootNode.contentEnc.CReqPool.Get()
-	ciphertext = ciphertext[:int(alignedLength)]
-	n, err := f.fd.ReadAt(ciphertext, int64(alignedOffset))
+	//// Read the backing ciphertext in one go
+	//blocks := f.contentEnc.ExplodePlainRange(off, length)
+	//alignedOffset, alignedLength := blocks[0].JointCiphertextRange(blocks)
+	//// f.fd.ReadAt takes an int64!
+	//if alignedOffset > math.MaxInt64 {
+	//	return nil, syscall.EFBIG
+	//}
+	//skip := blocks[0].Skip
+	//tlog.Debug.Printf("doRead: off=%d len=%d -> off=%d len=%d skip=%d\n",
+	//	off, length, alignedOffset, alignedLength, skip)
+	//
+	//ciphertext := f.rootNode.contentEnc.CReqPool.Get()
+	//ciphertext = ciphertext[:int(alignedLength)]
+	ciphertext := dst[len(dst) : len(dst)+int(length)]
+	n, err := f.fd.ReadAt(ciphertext, int64(off))
 	if err != nil && err != io.EOF {
 		tlog.Warn.Printf("read: ReadAt: %s", err.Error())
 		return nil, fs.ToErrno(err)
 	}
 	// The ReadAt came back empty. We can skip all the decryption and return early.
-	if n == 0 {
-		f.rootNode.contentEnc.CReqPool.Put(ciphertext)
-		return dst, 0
-	}
+	//if n == 0 {
+	//	f.rootNode.contentEnc.CReqPool.Put(ciphertext)
+	//	return dst, 0
+	//}
 	// Truncate ciphertext buffer down to actually read bytes
 	ciphertext = ciphertext[0:n]
-
-	firstBlockNo := blocks[0].BlockNo
-	tlog.Debug.Printf("ReadAt offset=%d bytes (%d blocks), want=%d, got=%d", alignedOffset, firstBlockNo, alignedLength, n)
+	plaintext := ciphertext
+	//firstBlockNo := blocks[0].BlockNo
+	//tlog.Debug.Printf("ReadAt offset=%d bytes (%d blocks), want=%d, got=%d", alignedOffset, firstBlockNo, alignedLength, n)
 
 	// Decrypt it
-	plaintext, err := f.contentEnc.DecryptBlocks(ciphertext, firstBlockNo, fileID)
-	f.rootNode.contentEnc.CReqPool.Put(ciphertext)
-	if err != nil {
-		corruptBlockNo := firstBlockNo + f.contentEnc.PlainOffToBlockNo(uint64(len(plaintext)))
-		tlog.Warn.Printf("doRead %d: corrupt block #%d: %v", f.qIno.Ino, corruptBlockNo, err)
-		return nil, syscall.EIO
-	}
+	//plaintext, err := f.contentEnc.DecryptBlocks(ciphertext, firstBlockNo, fileID)
+	//f.rootNode.contentEnc.CReqPool.Put(ciphertext)
+	//if err != nil {
+	//	corruptBlockNo := firstBlockNo + f.contentEnc.PlainOffToBlockNo(uint64(len(plaintext)))
+	//	tlog.Warn.Printf("doRead %d: corrupt block #%d: %v", f.qIno.Ino, corruptBlockNo, err)
+	//	return nil, syscall.EIO
+	//}
 
 	// Crop down to the relevant part
+	var skip uint64 = 0
 	var out []byte
 	lenHave := len(plaintext)
 	lenWant := int(skip + length)
@@ -224,7 +224,7 @@ func (f *File) doRead(dst []byte, off uint64, length uint64) ([]byte, syscall.Er
 	// else: out stays empty, file was smaller than the requested offset
 
 	out = append(dst, out...)
-	f.rootNode.contentEnc.PReqPool.Put(plaintext)
+	//f.rootNode.contentEnc.PReqPool.Put(plaintext)
 
 	return out, 0
 }
@@ -283,39 +283,39 @@ func (f *File) doWrite(data []byte, off int64) (uint32, syscall.Errno) {
 		}
 		f.fileTableEntry.ID = fileID
 	}
-	// Handle payload data
-	dataBuf := bytes.NewBuffer(data)
-	blocks := f.contentEnc.ExplodePlainRange(uint64(off), uint64(len(data)))
-	toEncrypt := make([][]byte, len(blocks))
-	for i, b := range blocks {
-		blockData := dataBuf.Next(int(b.Length))
-		// Incomplete block -> Read-Modify-Write
-		if b.IsPartial() {
-			// Read
-			oldData, errno := f.doRead(nil, b.BlockPlainOff(), f.contentEnc.PlainBS())
-			if errno != 0 {
-				tlog.Warn.Printf("ino%d fh%d: RMW read failed: errno=%d", f.qIno.Ino, f.intFd(), errno)
-				return 0, errno
-			}
-			// Modify
-			blockData = f.contentEnc.MergeBlocks(oldData, blockData, int(b.Skip))
-			tlog.Debug.Printf("len(oldData)=%d len(blockData)=%d", len(oldData), len(blockData))
-		}
-		tlog.Debug.Printf("ino%d: Writing %d bytes to block #%d",
-			f.qIno.Ino, len(blockData), b.BlockNo)
-		// Write into the to-encrypt list
-		toEncrypt[i] = blockData
-	}
+	//// Handle payload data
+	//dataBuf := bytes.NewBuffer(data)
+	//blocks := f.contentEnc.ExplodePlainRange(uint64(off), uint64(len(data)))
+	//toEncrypt := make([][]byte, len(blocks))
+	//for i, b := range blocks {
+	//	blockData := dataBuf.Next(int(b.Length))
+	//	// Incomplete block -> Read-Modify-Write
+	//	if b.IsPartial() {
+	//		// Read
+	//		oldData, errno := f.doRead(nil, b.BlockPlainOff(), f.contentEnc.PlainBS())
+	//		if errno != 0 {
+	//			tlog.Warn.Printf("ino%d fh%d: RMW read failed: errno=%d", f.qIno.Ino, f.intFd(), errno)
+	//			return 0, errno
+	//		}
+	//		// Modify
+	//		blockData = f.contentEnc.MergeBlocks(oldData, blockData, int(b.Skip))
+	//		tlog.Debug.Printf("len(oldData)=%d len(blockData)=%d", len(oldData), len(blockData))
+	//	}
+	//	tlog.Debug.Printf("ino%d: Writing %d bytes to block #%d",
+	//		f.qIno.Ino, len(blockData), b.BlockNo)
+	//	// Write into the to-encrypt list
+	//	toEncrypt[i] = blockData
+	//}
 	// Encrypt all blocks
-	ciphertext := f.contentEnc.EncryptBlocks(toEncrypt, blocks[0].BlockNo, f.fileTableEntry.ID)
+	ciphertext := data // f.contentEnc.EncryptBlocks(toEncrypt, blocks[0].BlockNo, f.fileTableEntry.ID)
 	// Preallocate so we cannot run out of space in the middle of the write.
 	// This prevents partially written (=corrupt) blocks.
 	var err error
-	cOff := blocks[0].BlockCipherOff()
+	cOff := off // blocks[0].BlockCipherOff()
 	// f.fd.WriteAt & syscallcompat.EnospcPrealloc take int64 offsets!
-	if cOff > math.MaxInt64 {
-		return 0, syscall.EFBIG
-	}
+	//if cOff > math.MaxInt64 {
+	//	return 0, syscall.EFBIG
+	//}
 	if !f.rootNode.args.NoPrealloc {
 		err = syscallcompat.EnospcPrealloc(f.intFd(), int64(cOff), int64(len(ciphertext)))
 		if err != nil {
@@ -336,7 +336,7 @@ func (f *File) doWrite(data []byte, off int64) (uint32, syscall.Errno) {
 	// Write
 	_, err = f.fd.WriteAt(ciphertext, int64(cOff))
 	// Return memory to CReqPool
-	f.rootNode.contentEnc.CReqPool.Put(ciphertext)
+	//f.rootNode.contentEnc.CReqPool.Put(ciphertext)
 	if err != nil {
 		tlog.Warn.Printf("ino%d fh%d: doWrite: WriteAt off=%d len=%d failed: %v",
 			f.qIno.Ino, f.intFd(), cOff, len(ciphertext), err)
